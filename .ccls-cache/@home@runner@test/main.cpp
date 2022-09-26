@@ -1,31 +1,62 @@
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <immintrin.h>
 #include <iostream>
-#include <chrono>
 
-#define N 1E+8
+#define N 100000000
 
-double integrate(double a, double b, double (*f) (double)) {
-    double dx = (b - a) / N;
-    double sum = 0;
+struct result_t {
+  double value, milliseconds;
+};
 
-    for (unsigned i = 0; i < N; i++) {
-        sum += f(a+i*dx);
-    }
+result_t run_experiment(double (*integrate)(double, double,
+                                            double (*f)(double)),
+                        double a, double b, double (*f)(double)) {
+  result_t res;
+  auto tm1 = std::chrono::steady_clock::now();
 
-    return dx*sum;
+  res.value = integrate(-1, 1, f);
+
+  res.milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::steady_clock::now() - tm1)
+                         .count();
+
+  return res;
 }
 
-int main()
-{
-    auto f = [](double x) { return x*x; };
-    
-    auto tm1 = std::chrono::steady_clock::now();
-    
-    std::cout << integrate(-1, 1, f) << '\n';
-    
-    std::cout << "Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - tm1).count() << '\n';
-    
-    return 0;
+double integrate_seq(double a, double b, double (*f)(double)) {
+  double dx = (b - a) / N;
+  double res = 0;
+
+  for (int i = 0; i < N; i++) {
+    res += f(a + i * dx);
+  }
+
+  return dx * res;
+}
+
+double integrate_par(double a, double b, double (*f)(double)) {
+  double dx = (b - a) / N;
+  double res = 0;
+
+#pragma omp parallel for reduction(+ : res)
+  for (int i = 0; i < N; i++) {
+    res += f(a + i * dx);
+  }
+
+  return dx * res;
+}
+
+int main() {
+  auto f = [](double x) { return x * x; };
+  auto r_seq = run_experiment(integrate_seq, -1, 1, f);
+  auto r_par = run_experiment(integrate_par, -1, 1, f);
+
+  std::cout << "Res seq: t=" << r_seq.milliseconds << ", r=" << r_seq.value
+            << '\n';
+  std::cout << "Res par: t=" << r_par.milliseconds << ", r=" << r_par.value
+            << '\n';
+
+  return 0;
 }
